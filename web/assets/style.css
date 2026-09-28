@@ -199,3 +199,172 @@ footer {
   font-size: 0.8rem;
   text-align: center;
 }
+
+#jump-now {
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.list-heading {
+  padding: 1rem 1rem 0;
+  margin: 0;
+  font-size: 1.1rem;
+  grid-column: 1 / -1;
+}
+
+/* ---------- EPG grid ---------- */
+
+.epg-grid-wrap {
+  padding: 0.75rem 1rem 1.25rem;
+}
+
+.epg {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+
+.epg-head,
+.epg-body {
+  display: flex;
+}
+
+.epg-head-corner {
+  flex: 0 0 200px;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.epg-head-scroll {
+  flex: 1 1 auto;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+
+.epg-ruler {
+  position: relative;
+  height: 28px;
+}
+
+.epg-ruler .tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--border);
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  padding-left: 4px;
+  white-space: nowrap;
+  line-height: 28px;
+}
+
+.epg-ruler .tick.hour {
+  border-left-color: var(--text-dim);
+  font-weight: 600;
+}
+
+.epg-side-scroll {
+  flex: 0 0 200px;
+  max-height: 70vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-right: 1px solid var(--border);
+  scrollbar-width: none;
+}
+.epg-side-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.epg-side-row {
+  height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.6rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.epg-side-row img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.epg-main-scroll {
+  flex: 1 1 auto;
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.epg-main {
+  position: relative;
+}
+
+.epg-row {
+  height: 54px;
+  position: relative;
+  border-bottom: 1px solid var(--border);
+}
+
+.epg-block {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  background: #2c3542;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.78rem;
+  cursor: default;
+}
+
+.epg-block .t {
+  color: var(--text-dim);
+  margin-right: 3px;
+}
+
+.epg-block.match {
+  outline: 2px solid var(--accent);
+}
+
+.epg-block.live {
+  background: color-mix(in srgb, var(--live) 22%, #2c3542);
+  border-color: var(--live);
+}
+
+.now-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.epg-noscript-note {
+  margin: 0.5rem 0 0;
+}
+
+@media (max-width: 640px) {
+  .epg-head-corner,
+  .epg-side-scroll {
+    flex-basis: 120px;
+  }
+}

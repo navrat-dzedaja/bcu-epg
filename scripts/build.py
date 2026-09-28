@@ -98,6 +98,12 @@ def fetch_and_parse():
                         title_el = elem.find("title")
                         desc_el = elem.find("desc")
                         cats = [c.text.strip() for c in elem.findall("category") if c.text]
+                        start_min = start.hour * 60 + start.minute
+                        duration_min = int((stop - start).total_seconds() // 60)
+                        # Clip at local midnight so a block never overflows its day's
+                        # timeline track; an overnight programme is simply cut short
+                        # (it isn't repeated as a continuation on the next day).
+                        duration_min = max(1, min(duration_min, 1440 - start_min))
                         programmes.setdefault(cid, []).append(
                             {
                                 "start": start.isoformat(),
@@ -106,6 +112,8 @@ def fetch_and_parse():
                                 "time": start.strftime("%H:%M"),
                                 "time_stop": stop.strftime("%H:%M"),
                                 "weekday": WEEKDAYS_CS[start.weekday()],
+                                "start_min": start_min,
+                                "duration_min": duration_min,
                                 "title": (title_el.text or "").strip() if title_el is not None and title_el.text else "",
                                 "desc": (desc_el.text or "").strip() if desc_el is not None and desc_el.text else "",
                                 "categories": cats,
@@ -159,16 +167,50 @@ def render_markdown(data: dict) -> str:
 
 
 def render_llms_txt(data: dict) -> str:
-    return (
-        "# BCU Media EPG – Sport TV guide\n\n"
+    now = datetime.fromisoformat(data["generated_at"])
+    lines = [
+        "# BCU Media EPG – Sport TV guide",
+        "",
         "> Statický přehled TV programu pro kanály kategorie \"Спорт\" (Sport) "
-        f"ze zdroje {data['source_url']}, aktualizovaný jednou denně.\n\n"
-        "Strojově čitelná data:\n"
-        "- /data.json — plný strukturovaný export (kanály, pořady, časy v ISO 8601)\n"
-        "- /guide.md — stejná data jako čitelný Markdown\n\n"
-        f"Vygenerováno: {data['generated_at']}\n"
-        f"{data['timezone_note']}\n"
-    )
+        f"ze zdroje {data['source_url']}, aktualizovaný jednou denně.",
+        "",
+        "## Strojově čitelná data",
+        "- /data.json — plný strukturovaný export (kanály, pořady, časy v ISO 8601, "
+        "start_min/duration_min = minuty od půlnoci v časovém pásmu zdroje)",
+        "- /guide.md — stejná data jako čitelný Markdown, seřazeno podle kanálu a dne",
+        "- /sitemap.xml — mapa stránek",
+        "",
+        f"Vygenerováno: {data['generated_at']}",
+        f"{data['timezone_note']}",
+        f"Počet sportovních kanálů: {len(data['channels'])}",
+        "",
+        "## Co se právě vysílá (odhad v okamžiku generování)",
+        "",
+    ]
+    now_playing = []
+    for ch in data["channels"]:
+        for p in ch["programmes"]:
+            start = datetime.fromisoformat(p["start"])
+            stop = datetime.fromisoformat(p["stop"])
+            if start <= now <= stop:
+                now_playing.append((ch["name"], p))
+                break
+    if now_playing:
+        for name, p in now_playing:
+            lines.append(f"- {name}: {p['time']}–{p['time_stop']} {p['title']}")
+    else:
+        lines.append("(žádná data k aktuálnímu času, viz /data.json pro plný rozvrh)")
+    lines.append("")
+    return "\n".join(lines)
+
+
+SITE_BASE_URL = "https://navrat-dzedaja.github.io/bcu-epg/"
+
+
+def render_sitemap(data: dict) -> str:
+    paths = ["", "data.json", "guide.md", "llms.txt"]
+    items = "".join(f"<url><loc>{SITE_BASE_URL}{p}</loc></url>" for p in paths)
+    return f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{items}</urlset>\n'
 
 
 def render_html(data: dict) -> str:
@@ -243,6 +285,38 @@ def render_html(data: dict) -> str:
         ensure_ascii=False,
     )
 
+    # Compact payload for the client-side grid renderer (only what it needs).
+    grid_data = {
+        "generated_at": data["generated_at"],
+        "days": data["days"],
+        "channels": [
+            {
+                "name": ch["name"],
+                "icon": ch["icon"],
+                "programmes": [
+                    {
+                        "day": p["day"],
+                        "time": p["time"],
+                        "time_stop": p["time_stop"],
+                        "start_min": p["start_min"],
+                        "duration_min": p["duration_min"],
+                        "title": p["title"],
+                        "desc": p["desc"],
+                        "start": p["start"],
+                        "stop": p["stop"],
+                    }
+                    for p in ch["programmes"]
+                ],
+            }
+            for ch in data["channels"]
+            if ch["programmes"]
+        ],
+    }
+    # Escape "</" so a title/desc containing "</script>" can't break out of the
+    # inline <script> tags below.
+    ld_json = ld_json.replace("</", "<\\/")
+    grid_json = json.dumps(grid_data, ensure_ascii=False).replace("</", "<\\/")
+
     return f"""<!doctype html>
 <html lang="cs">
 <head>
@@ -260,13 +334,32 @@ def render_html(data: dict) -> str:
 <header class="site-header">
 <h1>BCU Media EPG &ndash; Sport</h1>
 <p class="meta">Vygenerováno: {e(data['generated_at'])} &middot; Zdroj: <a href="{e(data['source_url'])}">{e(data['source_url'])}</a></p>
-<p class="meta">{e(data['timezone_note'])} &middot; Sportovních kanálů: {len(data['channels'])} &middot; Alternativní formáty: <a href="data.json">data.json</a>, <a href="guide.md">guide.md</a></p>
+<p class="meta">{e(data['timezone_note'])} &middot; Sportovních kanálů: {len(data['channels'])} &middot; Pro AI/čtečky: <a href="llms.txt">llms.txt</a>, <a href="data.json">data.json</a>, <a href="guide.md">guide.md</a> &middot; <a href="#seznam">textový seznam ↓</a></p>
 <div class="controls">
-<input id="search" type="search" placeholder="Hledat kanál…" autocomplete="off">
+<input id="search" type="search" placeholder="Hledat kanál nebo pořad…" autocomplete="off">
 <div class="day-buttons" id="day-buttons"></div>
+<button id="jump-now" type="button">Teď</button>
 </div>
 </header>
-<main>
+
+<section class="epg-grid-wrap" aria-label="Programová mřížka">
+  <div class="epg" id="epg">
+    <div class="epg-head">
+      <div class="epg-head-corner"></div>
+      <div class="epg-head-scroll" id="head-scroll"><div class="epg-ruler" id="ruler"></div></div>
+    </div>
+    <div class="epg-body">
+      <div class="epg-side-scroll" id="side-scroll"><div class="epg-side" id="side"></div></div>
+      <div class="epg-main-scroll" id="main-scroll"><div class="epg-main" id="main"></div></div>
+    </div>
+  </div>
+  <p class="epg-noscript-note"><noscript>Mřížka vyžaduje JavaScript. Úplný textový přehled najdeš níže nebo v <a href="guide.md">guide.md</a>.</noscript></p>
+</section>
+
+<script type="application/json" id="epg-data">{grid_json}</script>
+
+<main id="seznam">
+<h2 class="list-heading">Textový přehled podle kanálů</h2>
 {channels_html}
 </main>
 <footer>
@@ -290,7 +383,10 @@ def main():
     (OUT_DIR / "data.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     (OUT_DIR / "guide.md").write_text(render_markdown(data), encoding="utf-8")
     (OUT_DIR / "llms.txt").write_text(render_llms_txt(data), encoding="utf-8")
-    (OUT_DIR / "robots.txt").write_text("User-agent: *\nAllow: /\n", encoding="utf-8")
+    (OUT_DIR / "sitemap.xml").write_text(render_sitemap(data), encoding="utf-8")
+    (OUT_DIR / "robots.txt").write_text(
+        f"User-agent: *\nAllow: /\nSitemap: {SITE_BASE_URL}sitemap.xml\n", encoding="utf-8"
+    )
 
     print("Build finished OK.", file=sys.stderr)
 
